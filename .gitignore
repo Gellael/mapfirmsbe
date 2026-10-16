@@ -1,0 +1,8 @@
+# Node.js / React
+node_modules/
+dist/
+.env
+
+# Rust
+target/
+Cargo.lock
