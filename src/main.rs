@@ -133,7 +133,10 @@ async fn main() {
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
-    println!("API jalan di http://localhost:8080");
-    axum::serve(listener, app).await.unwrap();
+    // sesudah: ikuti port dari Vercel, 8080 hanya cadangan untuk lokal
+let port = std::env::var("PORT").unwrap_or_else(|_| "8080".into());
+let addr = format!("0.0.0.0:{port}");
+let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+println!("API jalan di {addr}");
+axum::serve(listener, app).await.unwrap();
 }
