@@ -13,7 +13,10 @@ use std::{
 };
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
+mod gee;
 
+const CO_TTL: Duration = Duration::from_secs(6 * 3600);
+type CoCache = Arc<RwLock<Option<(Instant, String)>>>;
 // west,south,east,north -> seluruh Indonesia
 const BBOX: &str = "95,-11,141,6";
 const SOURCES: [&str; 4] = [
@@ -31,6 +34,7 @@ struct AppState {
     key: String,
     client: reqwest::Client,
     cache: Cache,
+    co_cache: CoCache,
 }
 
 #[derive(Deserialize)]
@@ -114,6 +118,20 @@ async fn fires(State(s): State<AppState>, Query(p): Query<Params>) -> Result<Jso
     Ok(Json(fc))
 }
 
+async fn co_tiles(State(s): State<AppState>) -> Result<Json<Value>, ApiErr> {
+    if let Some((t, url)) = s.co_cache.read().await.as_ref() {
+        if t.elapsed() < CO_TTL {
+            return Ok(Json(json!({ "url": url })));
+        }
+    }
+    let url = gee::create_co_map(&s.client, 2).await.map_err(|e| {
+        eprintln!("GEE error: {e}"); // detail hanya di log, tidak dikirim ke klien
+        (StatusCode::BAD_GATEWAY, "Gagal membuat layer CO".into())
+    })?;
+    *s.co_cache.write().await = Some((Instant::now(), url.clone()));
+    Ok(Json(json!({ "url": url })))
+}
+
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().ok();
@@ -125,10 +143,12 @@ async fn main() {
             .build()
             .unwrap(),
         cache: Arc::new(RwLock::new(HashMap::new())),
+        co_cache: Arc::new(RwLock::new(None)),
     };
 
     let app = Router::new()
         .route("/api/fires", get(fires))
+        .route("/api/co-tiles", get(co_tiles))
         .route("/api/health", get(|| async { "ok" }))
         .layer(CorsLayer::permissive())
         .with_state(state);
